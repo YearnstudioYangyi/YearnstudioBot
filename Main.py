@@ -30,11 +30,13 @@ help_text = """/mc [指令] 执行服务器指令
     运行内存：查询服务器总内存
     CPU：查询服务器CPU占用率
     运行时长：查询服务器运行时长
-"""
+/审核 [玩家名] 将玩家加入白名单"""
 rcon_host = '127.0.0.1'
 rcon_port = 25575
 rcon_password = '@Fkchh000'
 api_ip = 'http://127.0.0.1:3000'
+whitelist = {}
+
 
 def GetMemberRole(data):
     id = data['user_id']
@@ -91,7 +93,23 @@ def root():
             SendGroupMsg(data,response)
     elif msg == "/help":
         SendGroupMsg(data,help_text)
+    elif msg.startswith("/审核 "):
+        # 获取发送者QQ号
+        user_id = data["user_id"]
+        if user_id not in whitelist:
+            msg = msg.replace("/审核 ","")
+            with Client(rcon_host, rcon_port, passwd=rcon_password) as c:
+                response = c.run('whitelist add ' + msg)
+                c.run('whitelist save')
+                whitelist[user_id] = msg
+                with open('whitelist.json', 'w'):
+                    json.dump(whitelist, open('whitelist.json', 'w'))
+                SendGroupMsg(data,f'[CQ:at,qq={user_id}] 已添加白名单')
+        else:
+            SendGroupMsg(data,f'[CQ:at,qq={user_id}] 一个QQ号只能绑定一个MC用户名')
     return {}
 
 if __name__ == "__main__":
+    with open('./whitelist.json', 'r') as f:
+        whitelist = json.load(f)
     app.run(host='0.0.0.0', port=8090, debug=True, threaded=True)
