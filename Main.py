@@ -31,6 +31,11 @@ help_text = """/mc [指令] 执行服务器指令
     CPU：查询服务器CPU占用率
     运行时长：查询服务器运行时长
 /审核 [玩家名] 将玩家加入白名单"""
+status_help = """
+/status指令可用条目：
+运行内存：查询服务器总内存
+CPU：查询服务器CPU占用率
+运行时长：查询服务器运行时长"""
 rcon_host = '127.0.0.1'
 rcon_port = 25575
 rcon_password = '@Fkchh000'
@@ -82,6 +87,8 @@ def root():
             boot_time = datetime.fromtimestamp(psutil.boot_time())
             now = datetime.now()
             uptime = now - boot_time
+            # 去掉小数点
+            uptime = str(uptime).split('.')[0]
             SendGroupMsg(data,f"系统运行时长为{uptime}")
         else:
             SendGroupMsg(data,"请输入正确的参数")
@@ -107,6 +114,8 @@ def root():
                 SendGroupMsg(data,f'[CQ:at,qq={user_id}] 已添加白名单')
         else:
             SendGroupMsg(data,f'[CQ:at,qq={user_id}] 一个QQ号只能绑定一个MC用户名')
+    elif msg == '/status':
+        SendGroupMsg(data,status_help)
     return {}
 
 if __name__ == "__main__":
