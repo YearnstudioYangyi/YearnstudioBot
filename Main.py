@@ -360,8 +360,6 @@ def SearchWithBing(keyword):
     return msg
 
 def BanKeyWord(msg):
-    # 为了过审啊啊啊
-    return msg
     try:
         ret = requests.get(f'https://api.yyy001.com/api/Forbidden?text={msg}').json()
         code = ret.get('code')
