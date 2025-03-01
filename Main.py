@@ -340,7 +340,7 @@ def BilibiliSearch(name):
         res = []
         print(data)
         for i in data:
-            res.append(f"{i['id']}.{i['title']}(BVID:{i['bvid']})")
+            res += (f"\n{i['id']}.{i['title']}(BVID:{i['bvid']})")
         return res
     except requests.exceptions.RequestException as e:
         print("Error:", e)
