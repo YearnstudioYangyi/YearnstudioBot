@@ -577,9 +577,7 @@ def root():
                 return 'Successfully',200
             SendGroupMsg(data,f"正在搜索...")
             ret = BilibiliSearch(msg)
-            SendGroupMsg(data,f"已搜索到{str(ret.__len__())}个内容")
-            for i in ret:
-                SendGroupMsg(data,i)
+            SendGroupMsg(data,i)
             return 'Successfully',200
     elif msg == '当前模型':
         if data['group_id'] in model_group:
