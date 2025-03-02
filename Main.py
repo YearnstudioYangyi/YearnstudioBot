@@ -347,8 +347,28 @@ def BilibiliSearch(name):
         print("Error:", e)
         return None
 
-# 起零API
+def DomainInfo(domain):
+    try:
+        response = requests.get(f"https://api.yyy001.com/api/whois?domain={domain}")
+        response.raise_for_status()
+        data = response.json()['data']['whois_info']
+        re = f"域名注册商:{data['registrar']}\n日期情况:{data['dates']}\n域名状态:{data['status']}"
+        return re
+    except requests.exceptions.RequestException as e:
+        print("Error:", e)
+        return None
 
+def YiYan():
+    try:
+        response = requests.get("https://api.yyy001.com/api/yiyan?charset=UTF-8")
+        response.raise_for_status()
+        data = response.text
+        return data
+    except requests.exceptions.RequestException as e:
+        print("Error:", e)
+        return None
+
+# 起零API
 
 def SearchWithBing(keyword):
     api = "https://api.istero.com/resource/bing/search"
@@ -487,7 +507,7 @@ def root():
         SendGroupMsg(data,f"已添加白名单,祝您游戏愉快")
         msg = msg.replace("/审核 ","")
         with Client(rcon_host, rcon_port, passwd=rcon_password) as c:
-            response = c.run('whitelist add ' + msg)
+            c.run('whitelist add ' + msg)
             c.run('whitelist save')
             return 'Successfully',200
     else:
@@ -505,6 +525,22 @@ def root():
             print(whitegourp)
             SendGroupMsg(data,"命令不正确，目前支持/mc、/审核和/时间指令")
             return 'Successfully',200
+    if msg.startswith("绑定QQ号 "):
+        msg = msg.replace("绑定QQ号 ","")
+        SingIn
+    if msg == '图片测试':
+        SendGroupMsg(data,f"[CQ:image,url=https://p.qlogo.cn/gh/748440630/748440630/0/]")
+        return 'Successfully',200
+    if msg == '一言':
+        SendGroupMsg(data,f"{YiYan()}")
+        return 'Successfully',200
+    if msg.startswith('域名查询 '):
+        msg = msg.replace("域名查询 ","")
+        msg = msg.replace(" ",".")
+        domain = msg
+        SendGroupMsg(data,'正在查询')
+        SendGroupMsg(data,str(DomainInfo(domain)))
+        return 'Successfully',200
     if msg.startswith("/status "):
         msg = msg.replace("/status ","")
         if msg == "运行内存":
@@ -530,12 +566,6 @@ def root():
     elif msg.startswith("/mc "):
         SendGroupMsg(data,"该指令已禁用")
         return 'Successfully',200
-        # 去掉开头的/mc
-        msg = msg.replace("/mc ","")
-        with Client(rcon_host, rcon_port, passwd=rcon_password) as c:
-            response = c.run(msg)
-            SendGroupMsg(data,response)
-            return 'Successfully',200
     elif msg == '本次会话':
         SendGroupMsg(data,f"\nGroup_ID={data['group_id']}\nReal_Group_ID={data['real_group_id']}\nUser_ID={data['user_id']}\nMessage_ID={data['message_id']}\nRaw_Message={data['raw_message']}\nMessage_Type={data['message_type']}\nSub_Type={data['sub_type']}\nFont={data['font']}\nSelf_Id={data['self_id']}\nPost_Type={data['post_type']}\n--End--")
         return 'Successfully',200
