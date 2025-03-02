@@ -17,8 +17,6 @@ import json
 import shutil
 import psutil # type: ignore
 from os.path import join
-import importlib.util
-import string
 from rcon import Client # type: ignore
 from sparkai.llm.llm import ChatSparkLLM, ChunkPrintHandler # type: ignore
 from sparkai.core.messages import ChatMessage # type: ignore
@@ -88,6 +86,9 @@ silicon_key = ''
 
 deepseek_model = ['deepseek','DeepSeek','DeepSeek-R1','DeepSeek-8B','深度思考','deepseek-r1']
 qwen_model = ['qwen','Qwen','通义千问','Qwen2.5','Tongyi']
+
+WhyKey = ''
+qiling_key = ''
 
 model_group = {}
 
@@ -302,7 +303,7 @@ def StreamChat(data):
         return str(completion.choices[0].message.content)
 
 # WhyAPI部分
-WhyKey = ''
+
 def DouyinHot():
     try:
         response = requests.get(f'https://whyta.cn/api/tx/douyinhot?key={WhyKey}')
@@ -337,7 +338,7 @@ def BilibiliSearch(name):
         response = requests.get(f'https://api.yyy001.com/api/blisearch?msg={name}')
         response.raise_for_status()
         data = response.json()['data']
-        res = []
+        res = ""
         print(data)
         for i in data:
             res += (f"\n{i['id']}.{i['title']}(BVID:{i['bvid']})")
@@ -347,7 +348,7 @@ def BilibiliSearch(name):
         return None
 
 # 起零API
-qiling_key = ''
+
 
 def SearchWithBing(keyword):
     api = "https://api.istero.com/resource/bing/search"
@@ -360,6 +361,7 @@ def SearchWithBing(keyword):
     return msg
 
 def BanKeyWord(msg):
+    return msg
     try:
         ret = requests.get(f'https://api.yyy001.com/api/Forbidden?text={msg}').json()
         code = ret.get('code')
@@ -375,8 +377,19 @@ def BanKeyWord(msg):
                 msg = msg.replace(k, '*' * len(k))
             return msg
     except Exception as e:
-        print(e)
-        return "关键词检测接口异常，请联系开发者"
+        try:
+            headers = {  
+                'Content-Type': 'application/json' 
+            }  
+            data = json.dumps({'content':msg})
+            response = requests.post(f'http://47.108.139.0:34968/wordscheck', data={'content':str(msg)}, headers=headers)
+            print(response.text)
+            if response.status_code == 200 and response.json()['code'] == 0 and response.json()['msg'] == '检测成功':
+                return response.json()['return_str']
+            return "关键词检测接口异常，请联系开发者"
+        except Exception as e:
+            print(e)
+            return "关键词检测接口异常，请联系开发者"
 
 def SendGroupMsg(data,msg,double=False):
     if data['group_id'] not in without_ban:
@@ -448,27 +461,6 @@ def AddCoin(data,coin):
         json.dump(data,f,indent=4)
     return data[str(group_id)][str(user_id)]['coin']
 
-def TestMarkdown():
-    PushMsg(487886163,f'主动消息测试')
-    data = {
-	"markdown": {
-		"custom_template_id": "102646446_1740143006",
-		    "params": [{
-				    "key": "day",
-				    "values": ["1"]
-			    },
-			    {
-				    "key": "days",
-				    "values": ["1"]
-			    },
-                {
-                    "key": "imgurl",
-                    "values": ["https://static.yearnstudio.cn/static/logo.jpg"]
-                }
-		    ]
-	    }
-    }
-    PushMsg(487886163,encode_to_base64(f'[CQ=markdown,data={json.dumps(data)}]'))
 
 def GetMemAll():
     mem = psutil.virtual_memory()
@@ -575,7 +567,7 @@ def root():
             if msg == '':
                 SendGroupMsg(data,f"请输入搜索内容")
                 return 'Successfully',200
-            SendGroupMsg(data,f"正在搜索...")
+            # SendGroupMsg(data,f"正在搜索...")
             ret = BilibiliSearch(msg)
             SendGroupMsg(data,ret)
             return 'Successfully',200
@@ -606,7 +598,7 @@ def root():
         SendGroupMsg(data,retu)
         return {}
     elif msg.startswith('bing search '):
-        SendGroupMsg(data,f"正在搜索...")
+        # SendGroupMsg(data,f"正在搜索...")
         msg = msg.replace('bing search ','')
         res = SearchWithBing(msg)
         SendGroupMsg(data,f"  {res}")
