@@ -481,6 +481,49 @@ def AddCoin(data,coin):
         json.dump(data,f,indent=4)
     return data[str(group_id)][str(user_id)]['coin']
 
+def getNowTimeStamp():
+    # 获取年月日
+    year = datetime.now().year
+    month = datetime.now().month
+    day = datetime.now().day
+    return int(year * 10000 + month * 100 + day)
+
+def TodayYunshi(data):
+    group_id = data.get('group_id')
+    user_id = data.get('user_id')
+    # 设置随机种子
+    random.seed(str(group_id) + str(user_id) + str(getNowTimeStamp()))
+    r = random.randint(1,100)
+    with open('./yunshi.json','r',encoding='utf-8') as f:
+        yunshi = json.load(f)
+    max_good = len(yunshi['good'])
+    max_bad = len(yunshi['bad'])
+    good = []
+    bad = []
+    for i in range(2):
+        t = random.randint(0,max_good-1)
+        good.append(yunshi['good'][t])
+        yunshi['good'].pop(t)
+        max_bad -= 1
+    for i in range(2):
+        t = random.randint(0,max_bad-1)
+        bad.append(yunshi['bad'][t])
+        yunshi['bad'].pop(t)
+        max_bad -= 1
+    #print(good)
+    #print(bad)
+    # good = [random.choice(yunshi['good']),random.choice(yunshi['good'])]
+    # bad = [random.choice(yunshi['bad']),random.choice(yunshi['bad'])]
+    if r <= 10:
+        return '\n§ 大凶 §\n' + '★☆☆☆☆\n' + f"宜:\n  诸事不宜\n忌:\n  {bad[0]}\n  {bad[1]}"
+    elif r > 10 and r <= 30:
+        return '\n§ 小凶 §\n' + '★★☆☆☆\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  {bad[0]}\n  {bad[1]}"
+    elif r > 30 and r <= 60:
+        return '\n§ 中平 §\n' + '★★★☆☆\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  {bad[0]}\n  {bad[1]}"
+    elif r > 60 and r <= 80:
+        return '\n§ 小吉 §\n' + '★★★★☆\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  {bad[0]}\n  {bad[1]}"
+    elif r > 80 and r <= 100:
+        return '\n§ 大吉 §\n' + '★★★★★\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  诸事皆宜"
 
 def GetMemAll():
     mem = psutil.virtual_memory()
@@ -534,6 +577,9 @@ def root():
     if msg == '一言':
         SendGroupMsg(data,f"{YiYan()}")
         return 'Successfully',200
+    if msg == '今日运势':
+        SendGroupMsg(data,f"{TodayYunshi(data)}")
+        return 'Successfully',200
     if msg.startswith('域名查询 '):
         msg = msg.replace("域名查询 ","")
         msg = msg.replace(" ",".")
@@ -568,15 +614,6 @@ def root():
         return 'Successfully',200
     elif msg == '本次会话':
         SendGroupMsg(data,f"\nGroup_ID={data['group_id']}\nReal_Group_ID={data['real_group_id']}\nUser_ID={data['user_id']}\nMessage_ID={data['message_id']}\nRaw_Message={data['raw_message']}\nMessage_Type={data['message_type']}\nSub_Type={data['sub_type']}\nFont={data['font']}\nSelf_Id={data['self_id']}\nPost_Type={data['post_type']}\n--End--")
-        return 'Successfully',200
-    elif msg == '会话':
-        SendGroupMsg(data,f"\nGroup_ID={data['group_id']}\nReal_Group_ID={data['real_group_id']}\n--End--")
-        return 'Successfully',200
-    elif msg == '/status':
-        SendGroupMsg(data,status_help)
-        return 'Successfully',200
-    elif msg == '查询订单':
-        SendGroupMsg(data,f"暂无订单")
         return 'Successfully',200
     elif msg.startswith('echo '):
         SendGroupMsg(data,msg.replace('echo ','',1),True)
@@ -659,9 +696,8 @@ def root():
         SendGroupMsg(data,ret)
         SendGroupMsg(data,'对话完成')
         return {}
-    SendGroupMsg(data,f"正在思考...")
+    SendGroupMsg(data,f"正在思考...(如果没有内容发出，就是被和谐了)")
     SendGroupMsg(data,NoStreamChat(model_group[data['group_id']],msg))
-    SendGroupMsg(data,'对话完成')
     return {}
 
 if __name__ == "__main__":
