@@ -92,6 +92,21 @@ qiling_key = ''
 
 model_group = {}
 
+def GetUid(data):
+    with open('./user.json','r',encoding='utf-8') as f:
+        user = json.load(f)
+    user_id = str(data['user_id'])
+    group_id = str(data['group_id'])
+    uid = f"{group_id}.{user_id}"
+    if uid not in user:
+        user[uid] = {'lashSign':'2000-1-1','SignDays':'0','Coin':'0','model':'spark-lite','streamInfo':None,'qid':'0'}
+        with open('./user.json','w',encoding='utf-8') as f:
+            json.dump(user,f,ensure_ascii=False,indent=4)
+        return uid
+    elif user[uid]['qid'] != '0':
+        uid = user[uid]['qid']
+    return uid
+
 def encode_to_base64(input_string):
     """
     将输入字符串编码为Base64格式。
@@ -279,6 +294,21 @@ def IsStreamChatExist(data):
     else:
         return False
 
+def BindQQ(data,qq):
+    uid = GetUid(data)
+    with open('./user.json','r',encoding='utf-8') as f:
+        user = json.load(f)
+    user[qq] = user[uid]
+    user[uid] = {'qid':qq}
+    with open('./user.json','w',encoding='utf-8') as f:
+        json.dump(user,f,ensure_ascii=False,indent=4)
+
+def GetModel(data):
+    uid = GetUid(data)
+    with open('./user.json','r',encoding='utf-8') as f:
+        user = json.load(f)
+    return user[uid]['model']
+
 def StreamChat(data):
     if not IsStreamChatExist(data):
         return '对话不存在'
@@ -411,6 +441,11 @@ def BanKeyWord(msg):
             print(e)
             return "关键词检测接口异常，请联系开发者"
 
+def GetUserConfig():
+    with open('./user.json','r',encoding='utf-8') as f:
+        user = json.load(f)
+    return user
+
 def SendGroupMsg(data,msg,double=False):
     if data['group_id'] not in without_ban:
         msg = BanKeyWord(msg)
@@ -438,34 +473,24 @@ def get_cpu_usage():
     cpu_percent = psutil.cpu_percent(interval=1)
     return cpu_percent
 
+def WriteUserJson(user):
+    with open('./user.json','w',encoding='utf-8') as f:
+        json.dump(user,f,ensure_ascii=False,indent=4)
+    return
+
 def SingIn(data):
-    # 签到
-    with open('./sing.json','r') as f:
-        sing_list = json.load(f)
-    print(sing_list)
-    user_id = str(data['user_id'])
-    group_id = str(data['group_id'])
-    datetime_str = datetime.now().strftime('%Y-%m-%d')
-    print(datetime_str)
-    print(group_id in sing_list)
-    if group_id in sing_list and user_id in sing_list[group_id]:
-        #获取年月日
-        print(f'[上次签到]{sing_list[group_id][user_id]}，判断测试{sing_list[group_id][user_id] == datetime_str}')
-        if sing_list[group_id][user_id] == datetime_str:
-            return '今天已经签到过了'
-        else:
-            sing_list[group_id][user_id] = datetime_str
-            with open('./sing.json','w') as f:
-                json.dump(sing_list,f)
-            return f'签到成功，获得10金币\n总金币：{AddCoin(data,10)}'
+    uid = GetUid(data)
+    with open('./user.json','r') as f:
+        user = json.load(f)
+    datatime = datetime.now().strftime('%Y-%m-%d')
+    if user[uid]['lashSign'] == datatime:
+        return '今天已经签到过了，请明天再来'
     else:
-        if group_id not in sing_list:
-            sing_list[group_id] = {}
-        if user_id not in sing_list[group_id]:
-            sing_list[group_id][user_id] = datetime_str
-        with open('./sing.json','w') as f:
-            json.dump(sing_list,f)
-        return f'签到成功，获得10金币\n总金币：{AddCoin(data,10)}'
+        user[uid]['lashSign'] = datatime
+        user[uid]['SignDays'] = str(int(user[uid]['SignDays'])+1)
+        user[uid]['Coin'] = str(int(user[uid]['Coin'])+10)
+        threading.Thread(target=WriteUserJson,args=(user,)).start()
+        return f"签到成功，获得10金币\n总金币：{AddCoin(data,10)}\n\n已经签到了{user[uid]['SignDays']}天"
 
 def AddCoin(data,coin):
     user_id = data.get('user_id')
@@ -525,6 +550,17 @@ def TodayYunshi(data):
     elif r > 80 and r <= 100:
         return '\n§ 大吉 §\n' + '★★★★★\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  诸事皆宜"
 
+def NazhaPiaofang():
+    try:
+        data = requests.get('https://60s-api.viki.moe/v2/maoyan').json()['data']['list']
+        for i in data:
+            if i['movie_name'] == '哪吒之魔童闹海':
+                return f"\n{i['movie_name']}实时数据：(来源：猫眼)\n票房:{i['box_office']}({i['box_office_desc']})\n排名:{i['rank']}"
+        return '哪吒之魔童闹海未找到'
+    except Exception as e:
+        return str(e.args)
+
+
 def GetMemAll():
     mem = psutil.virtual_memory()
     return round(mem.total / (1024.0 ** 3),2)
@@ -534,21 +570,23 @@ def root():
     data = request.json
     if 'group_id' not in data:
         msg = str(data['raw_message'])
-        if msg == '/时间':
+        if msg == '时间':
             SendPrivateMsg(data,f"当前时间是{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             return {}
         SendPrivateMsg(data,"命令不正确，目前私聊只支持/时间指令")
     print(data)
     msg = str(data['raw_message'])
-    if msg == '/help':
+    if msg == 'help':
         SendGroupMsg(data,help_text)
         return 'Successfully',200
-    if msg == '/时间':
+    
+    if msg == '时间':
         SendGroupMsg(data,f"当前时间是{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         return 'Successfully',200
-    elif msg.startswith("/审核 "):
+    
+    elif msg.startswith("审核 "):
         SendGroupMsg(data,f"已添加白名单,祝您游戏愉快")
-        msg = msg.replace("/审核 ","")
+        msg = msg.replace("审核 ","")
         with Client(rcon_host, rcon_port, passwd=rcon_password) as c:
             c.run('whitelist add ' + msg)
             c.run('whitelist save')
@@ -568,18 +606,23 @@ def root():
             print(whitegourp)
             SendGroupMsg(data,"命令不正确，目前支持/mc、/审核和/时间指令")
             return 'Successfully',200
+        
     if msg.startswith("绑定QQ号 "):
         msg = msg.replace("绑定QQ号 ","")
-        SingIn
-    if msg == '图片测试':
-        SendGroupMsg(data,f"[CQ:image,url=https://p.qlogo.cn/gh/748440630/748440630/0/]")
         return 'Successfully',200
+    
+    if msg == '测试':
+        
+        return 'Successfully',200
+    
     if msg == '一言':
         SendGroupMsg(data,f"{YiYan()}")
         return 'Successfully',200
+    
     if msg == '今日运势':
         SendGroupMsg(data,f"{TodayYunshi(data)}")
         return 'Successfully',200
+    
     if msg.startswith('域名查询 '):
         msg = msg.replace("域名查询 ","")
         msg = msg.replace(" ",".")
@@ -587,8 +630,13 @@ def root():
         SendGroupMsg(data,'正在查询')
         SendGroupMsg(data,str(DomainInfo(domain)))
         return 'Successfully',200
-    if msg.startswith("/status "):
-        msg = msg.replace("/status ","")
+    
+    if msg == '获取ID':
+        SendGroupMsg(data,f"群ID: {data['group_id']}")
+        return 'Successfully',200
+    
+    if msg.startswith("status "):
+        msg = msg.replace("status ","")
         if msg == "运行内存":
             mem = GetMemAll()
             SendGroupMsg(data,f"总内存为{mem}GB")
@@ -609,24 +657,38 @@ def root():
         else:
             SendGroupMsg(data,"请输入正确的参数")
             return 'Successfully',200
-    elif msg.startswith("/mc "):
+        
+    elif msg.startswith("mc "):
         SendGroupMsg(data,"该指令已禁用")
         return 'Successfully',200
+    
     elif msg == '本次会话':
         SendGroupMsg(data,f"\nGroup_ID={data['group_id']}\nReal_Group_ID={data['real_group_id']}\nUser_ID={data['user_id']}\nMessage_ID={data['message_id']}\nRaw_Message={data['raw_message']}\nMessage_Type={data['message_type']}\nSub_Type={data['sub_type']}\nFont={data['font']}\nSelf_Id={data['self_id']}\nPost_Type={data['post_type']}\n--End--")
         return 'Successfully',200
+    
     elif msg.startswith('echo '):
         SendGroupMsg(data,msg.replace('echo ','',1),True)
         return 'Successfully',200
+    
+    elif msg.startswith('绑定QQ '):
+        msg = msg.replace('绑定QQ ','')
+        SendGroupMsg(data,f"正在执行绑定QQ操作，请绑定自己的QQ号，恶意绑定会被封禁")
+        BindQQ(data,msg)
+        SendGroupMsg(data,f"绑定成功")
+        return 'Successfully',200
+    
     elif msg.startswith("切换模型 "):
         msg = msg.replace("切换模型 ","")
-        if msg in model_list:
-            model_group[data['group_id']] = msg
-            SendGroupMsg(data,f"已将本群的模型切换为{msg}")
-            return 'Successfully',200
-        else:
+        if msg not in model_list:
             SendGroupMsg(data,f"模型不存在")
             return 'Successfully',200
+        uid = GetUid(data)
+        user = GetUserConfig()
+        user[uid]['model'] = msg
+        threading.Thread(target=WriteUserJson,args=(user,)).start()
+        SendGroupMsg(data,f"已将模型切换为{msg}")
+        return 'Successfully',200
+        
     elif msg.startswith("bilibili "):
         msg = msg.replace("bilibili ","")
         if msg.startswith('search '):
@@ -638,24 +700,28 @@ def root():
             ret = BilibiliSearch(msg)
             SendGroupMsg(data,ret)
             return 'Successfully',200
+        
     elif msg == '当前模型':
-        if data['group_id'] in model_group:
-            SendGroupMsg(data,f"当前群组的模型为{model_group[data['group_id']]}")
-            return 'Successfully',200
-        else:
-            SendGroupMsg(data,f"当前群组的模型为spark-lite")
-            model_group[data['group_id']] = 'spark-lite'
-            return 'Successfully',200
+        SendGroupMsg(data,f"当前模型为{GetModel(data)}")
+        return 'Successfully',200
+    
     elif msg == '抖音热榜':
         SendGroupMsg(data,DouyinHot())
         return {}
+    
+    elif msg == '哪咤票房' or msg == '哪吒票房':
+        SendGroupMsg(data,NazhaPiaofang())
+        return {}
+    
     elif msg == '全网热榜':
         SendGroupMsg(data,NetHot())
         return {}
+    
     elif msg == '关闭过滤':
         without_ban.append(data['group_id'])
         SendGroupMsg(data,f"已关闭过滤")
         return {}
+    
     elif msg == '模型列表':
         SendGroupMsg(data,f"模型列表:")
         retu = ''
@@ -664,12 +730,14 @@ def root():
         retu += f"共{len(model_list)}个模型可用"
         SendGroupMsg(data,retu)
         return {}
+    
     elif msg.startswith('bing search '):
         # SendGroupMsg(data,f"正在搜索...")
         msg = msg.replace('bing search ','')
         res = SearchWithBing(msg)
         SendGroupMsg(data,f"  {res}")
         return {}
+    
     elif msg.startswith('开启流式对话 使用模型 '):
         msg = msg.replace('开启流式对话 使用模型 ','')
         SendGroupMsg(data,f"正在申请流式对话...")
@@ -680,14 +748,16 @@ def root():
             return {}
         SendGroupMsg(data,f"已开启流式对话，编号为{StreamChatNum}")
         return {}
+    
     elif msg == '签到':
+        #SendGroupMsg(data,'本功能暂时禁用')
         SendGroupMsg(data,SingIn(data))
         return {}
+    
     elif msg == '商店':
         SendGroupMsg(data,'商店为空')
         return {}
-    if data['group_id'] not in model_group:
-        model_group[data['group_id']] = 'spark-lite'
+    
     # 判断是否为流式对话
     if data['group_id'] in StreamInfo and data['user_id'] in StreamInfo[data['group_id']]:
         SendGroupMsg(data,'正在思考(当前处于流式对话模型)')
@@ -696,9 +766,36 @@ def root():
         SendGroupMsg(data,ret)
         SendGroupMsg(data,'对话完成')
         return {}
+    
     SendGroupMsg(data,f"正在思考...(如果没有内容发出，就是被和谐了)")
-    SendGroupMsg(data,NoStreamChat(model_group[data['group_id']],msg))
+    SendGroupMsg(data,NoStreamChat(GetModel(data),msg))
     return {}
+
+import json
+
+def TestMarkdown():
+    t = {
+        "markdown": {
+            "custom_template_id": "102646446_1740898338",
+            "params": [
+                {
+                    "key": "text_start",
+                    "values": ["标题"]
+                },
+                {
+                    "key":"img_url",
+                    "values":["http://p.qlogo.cn/gh/748440630/748440630/0/"]
+                }
+            ]
+        }
+    }
+    # 将字典转换为 JSON 字符串
+    t_json = json.dumps(t, ensure_ascii=False)
+    # 对 JSON 字符串进行 Base64 编码
+    encoded_t = encode_to_base64(t_json)
+    # 构建最终的回复字符串
+    reply = f"[CQ:markdown,data=base64://{encoded_t}]"
+    PushMsg(487886163, reply)
 
 if __name__ == "__main__":
     with open('./whitelist.json', 'r') as f:
@@ -706,8 +803,5 @@ if __name__ == "__main__":
     # TestMarkdown()
     if not os.path.exists('./user.json'):
         with open('./user.json', 'w') as f:
-            json.dump({}, f)
-    if not os.path.exists('./sing.json'):
-        with open('./sing.json', 'w') as f:
             json.dump({}, f)
     app.run(host='0.0.0.0', port=8090, debug=True, threaded=True)
