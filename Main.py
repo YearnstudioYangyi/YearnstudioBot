@@ -5,6 +5,7 @@ import random
 import re
 import smtplib
 import subprocess
+import threading
 from waitress import serve # type: ignore
 from flask import Flask, jsonify,request # type: ignore
 from flask_cors import CORS # type: ignore
@@ -25,19 +26,30 @@ from zhipuai import ZhipuAI # type: ignore
 import qianfan # type: ignore
 import base64
 
+from apitoken import *
+
 app = Flask(__name__)
 
 help_text = """
+/时间 获取当前时间
+/审核 [用户名] 将用户名添加入白名单
+/40code 获取40code状态
+/help 显示本列表
+"""
+
+
+"""
 /help 获取帮助
-/审核 [玩家名] 将玩家加入白名单
 /时间 获取当前时间
 bilibili search [名称] 搜索视频名称
-bing search [名称] 使用必应搜索
 /status 获取当前服务器状态
 签到 签到
 商店 查看商店
 模型列表 查看模型列表
-切换模型 [模型名称] 切换为指定模型"""
+切换模型 [模型名称] 切换为指定模型
+哪咤票房 查看哪咤之魔童闹海的实时票房
+weather [城市名] 获取天气信息"""
+
 status_help = """
 /status指令可用条目：
 运行内存：查询服务器总内存
@@ -45,32 +57,31 @@ CPU：查询服务器CPU占用率
 运行时长：查询服务器运行时长"""
 rcon_host = '127.0.0.1'
 rcon_port = 25575
-rcon_password = ''
+rcon_password = '@Fkchh000'
 api_ip = 'http://127.0.0.1:3000'
 whitelist = {}
 without_ban = []
 
+# 高德API
+
+
 # AI部分
 
-model_list = ['spark-lite','讯飞星火','讯飞星火-lite','hunyuan','腾讯混元','hunyuan-lite','智谱清言','glm','chatglm','文心一言','文心一言-speed','ERNIE Speed','ERNIE-Speed-128K','ERNIE-Speed','文心一言-lite','ERNIE Lite','ERNIE-Lite-8K','ERNIE-Lite','文心一言-tiny','ERNIE Tiny','ERNIE-Tiny','ERNIE-Tiny-8K','deepseek','DeepSeek','DeepSeek-R1','DeepSeek-8B','深度思考','deepseek-r1','qwen','Qwen','通义千问','Qwen2.5','Tongyi']
+model_list = ['spark-lite','讯飞星火','讯飞星火-lite','hunyuan','腾讯混元','hunyuan-lite','智谱清言','glm','chatglm','文心一言','文心一言-speed','ERNIE Speed','ERNIE-Speed-128K','ERNIE-Speed','文心一言-lite','ERNIE Lite','ERNIE-Lite-8K','ERNIE-Lite','文心一言-tiny','ERNIE Tiny','ERNIE-Tiny','ERNIE-Tiny-8K','deepseek','DeepSeek','DeepSeek-R1','DeepSeek-8B','深度思考','deepseek-r1','qwen','Qwen','通义千问','Qwen2.5','Tongyi','Gemini']
 
 '''讯飞星火'''
 xing_model = ['spark-lite','讯飞星火-lite','讯飞星火']
 #星火认知大模型Spark Max的URL值，其他版本大模型URL值请前往文档（https://www.xfyun.cn/doc/spark/Web.html）查看
 SPARKAI_URL = 'wss://spark-api.xf-yun.com/v1.1/chat'
 #星火认知大模型调用秘钥信息，请前往讯飞开放平台控制台（https://console.xfyun.cn/services/bm35）查看
-SPARKAI_APP_ID = ''
-SPARKAI_API_SECRET = ''
-SPARKAI_API_KEY = ''
 #星火认知大模型Spark Max的domain值，其他版本大模型domain值请前往文档（https://www.xfyun.cn/doc/spark/Web.html）查看
 SPARKAI_DOMAIN = 'lite'
 
 '''腾讯混元'''
 tencent_model = ['腾讯混元','hunyuan','hunyuan-lite']
-Tencent_AppKey = ""
 
 '''智谱清言'''
-zhipu_key = ''
+
 zhipu_model = ['智谱清言','glm','chatglm']
 
 '''文心一言'''
@@ -78,34 +89,38 @@ baidu_model_speed = ['文心一言','文心一言-speed','ERNIE Speed','ERNIE-Sp
 baidu_model_lite = ['文心一言-lite','ERNIE Lite','ERNIE-Lite-8K','ERNIE-Lite']
 baidu_model_tiny = ['文心一言-tiny','ERNIE Tiny','ERNIE-Tiny','ERNIE-Tiny-8K']
 
-os.environ["QIANFAN_ACCESS_KEY"] = ""
-os.environ["QIANFAN_SECRET_KEY"] = ""
-
 '''硅基流动'''
-silicon_key = ''
+
 
 deepseek_model = ['deepseek','DeepSeek','DeepSeek-R1','DeepSeek-8B','深度思考','deepseek-r1']
 qwen_model = ['qwen','Qwen','通义千问','Qwen2.5','Tongyi']
-
-WhyKey = ''
-qiling_key = ''
 
 model_group = {}
 
 def GetUid(data):
     with open('./user.json','r',encoding='utf-8') as f:
         user = json.load(f)
-    user_id = str(data['user_id'])
-    group_id = str(data['group_id'])
-    uid = f"{group_id}.{user_id}"
+    user_id = str(data['real_user_id'])
+    uid = f"{user_id}"
     if uid not in user:
-        user[uid] = {'lashSign':'2000-1-1','SignDays':'0','Coin':'0','model':'spark-lite','streamInfo':None,'qid':'0'}
+        user[uid] = {'lashSign':'2000-1-1','SignDays':'0','Coin':'0','model':'glm','streamInfo':None,'qid':'0'}
         with open('./user.json','w',encoding='utf-8') as f:
             json.dump(user,f,ensure_ascii=False,indent=4)
         return uid
     elif user[uid]['qid'] != '0':
         uid = user[uid]['qid']
     return uid
+
+def GetZeroCatUser():
+    url = 'https://zerocat-api.houlangs.com/api/info'
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        return data['user']
+    else:
+        print(f"请求失败，状态码：{response.status_code}")
+        return None
+
 
 def encode_to_base64(input_string):
     """
@@ -170,7 +185,7 @@ def NoStreamChat(model, self):
         client = ZhipuAI(api_key=zhipu_key)
         try:
             response = client.chat.completions.create(
-                model="glm-4-flash",
+                model="glm-4.5-flash",
                 messages=[
                     {
                         "role": "user",
@@ -193,6 +208,23 @@ def NoStreamChat(model, self):
         }])
         print("Generated text:",resp["body"])
         return resp["body"]['result']
+    elif model == "Gemini":
+        client = OpenAI(
+            api_key='sk-AmethystFree',  
+            base_url="https://free.amethyst.ltd/v1",
+        )
+        completion = client.chat.completions.create(
+            model='gemini-2.5-pro',
+            messages=[
+                {
+                    "role": "user",
+                    "content": self,
+                },
+            ],
+            extra_body={},
+        )
+        print("Generated text:", completion.choices[0].message.content)
+        return str(completion.choices[0].message.content)
     elif model in baidu_model_speed:
         chat_comp = qianfan.ChatCompletion()
         resp = chat_comp.do(model="ERNIE-Speed-128K", messages=[{
@@ -303,6 +335,14 @@ def BindQQ(data,qq):
     with open('./user.json','w',encoding='utf-8') as f:
         json.dump(user,f,ensure_ascii=False,indent=4)
 
+def GetBoxUser():
+    ret = requests.get('https://sbox.yearnstudio.cn/number_of_users')
+    if ret.status_code == 200:
+        return ret.json()['number_of_users']
+    else:
+        return '获取失败'
+
+
 def GetModel(data):
     uid = GetUid(data)
     with open('./user.json','r',encoding='utf-8') as f:
@@ -411,40 +451,76 @@ def SearchWithBing(keyword):
     return msg
 
 def BanKeyWord(msg):
+    import re
+    msg = re.sub(r'(\*\*|__)|(\*|_)|\~\~|\[([^\]]+)\]\(([^)]+)\)|!\[([^\]]*)\]\(([^)]*)\)|`([^`]+)`|```[^`]*```|^#{1,6}\s.*$|^>.*$|^[\-*]\s+.*$', '', msg) # 过滤Markdown语法
+    msg = re.sub(r'<.*?>', '', msg) # 过滤HTML
+    msg = re.sub(r'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)', '', msg) # 过滤URL
     return msg
+
+# 高德API
+def GetWeather(city):
     try:
-        ret = requests.get(f'https://api.yyy001.com/api/Forbidden?text={msg}').json()
-        code = ret.get('code')
-        banCount = ret.get('data').get('banCount')
-        if code != 200:
-            return "关键词检测接口异常，请联系开发者"
-        if banCount == 0:
-            return msg
+        response = requests.get(f'https://restapi.amap.com/v3/geocode/geo?address={city}&output=json&key={gaode_key}')
+        response.raise_for_status()
+        data = response.json()
+        if data['status'] == '1' and data['info'] == 'OK':
+            i = data['geocodes'][0]
+            adcode = i['adcode']
+            full_name = i['formatted_address']
         else:
-            li = list(ret.get('data').get('banList'))
-            for i in li:
-                k = i.get('word')
-                msg = msg.replace(k, '*' * len(k))
-            return msg
-    except Exception as e:
+            return "获取天气失败，请检查城市名是否正确"
         try:
-            headers = {  
-                'Content-Type': 'application/json' 
-            }  
-            data = json.dumps({'content':msg})
-            response = requests.post(f'http://47.108.139.0:34968/wordscheck', data={'content':str(msg)}, headers=headers)
-            print(response.text)
-            if response.status_code == 200 and response.json()['code'] == 0 and response.json()['msg'] == '检测成功':
-                return response.json()['return_str']
-            return "关键词检测接口异常，请联系开发者"
-        except Exception as e:
-            print(e)
-            return "关键词检测接口异常，请联系开发者"
+            response = requests.get(f'https://restapi.amap.com/v3/weather/weatherInfo?city={adcode}&key={gaode_key}')
+            response.raise_for_status()
+            data = response.json()
+            if data['status'] == '1' and data['info'] == 'OK':
+                i = data['lives'][0]
+                weather = i['weather']
+                temperature = i['temperature']
+                wind_direction = i['winddirection']
+                wind_power = i['windpower']
+                return f"\n{full_name}\n天气: {weather}\n温度: {temperature}°C\n风向: {wind_direction}\n风力: {wind_power}\n数据来源: 高德开放平台 上报时间: {i['reporttime']}"
+        except:
+            return "获取天气失败，请检查城市名是否正确"
+        print(data)
+    except requests.exceptions.RequestException as e:
+        print("Error:", e)
+        return None
 
 def GetUserConfig():
     with open('./user.json','r',encoding='utf-8') as f:
         user = json.load(f)
     return user
+
+def SendGroupListMsg(data, msg):
+    group_id = data['group_id']
+    body = {"group_id": group_id, 'msg_id':data['message_id'], "message": msg}
+    try:
+        response = requests.post(url=f"{api_ip}/send_group_msg", json=body)
+        print(response.json())
+        return response.json()
+    except requests.RequestException as e:
+        print("Error:", e)
+        return None
+    
+def SendGroupTextMsg(data, msg):
+    group_id = data['group_id']
+    body = {"group_id": group_id, 'message_id':data['message_id'], "message": [{"type": "text", "data": {"text": msg}}]}
+    try:
+        response = requests.post(url=f"{api_ip}/send_group_msg", json=body)
+        print(response.json())
+        return response.json()
+    except requests.RequestException as e:
+        print("Error:", e)
+        return None
+
+def SendGroupImg(data,img):
+    try:
+        SendGroupMsg(data,f"[CQ:image,file={img}]")
+    except Exception as e:
+        print("Error:", e)
+        SendGroupMsg(data,f"获取图片失败{str(e)}")
+
 
 def SendGroupMsg(data,msg,double=False):
     if data['group_id'] not in without_ban:
@@ -452,9 +528,10 @@ def SendGroupMsg(data,msg,double=False):
     try:
         if double:
             requests.get(f"{api_ip}/send_group_msg?group_id={data['group_id']}&msg_id={data['message_id']}&message={msg}&auto_escape=false")
-        requests.get(f"{api_ip}/send_group_msg?group_id={data['group_id']}&msg_id={data['message_id']}&message={msg}&auto_escape=false")
-    except:
+        return requests.get(f"{api_ip}/send_group_msg?group_id={data['group_id']}&msg_id={data['message_id']}&message={msg}&auto_escape=false").text
+    except Exception as e:
         print("发送失败:" + f"{api_ip}/send_group_msg?group_id={data['group_id']}&msg_id={data['message_id']}&message={msg}&auto_escape=false")
+        return e
 
 def SendPrivateMsg(data,msg):
     try:
@@ -514,10 +591,9 @@ def getNowTimeStamp():
     return int(year * 10000 + month * 100 + day)
 
 def TodayYunshi(data):
-    group_id = data.get('group_id')
-    user_id = data.get('user_id')
+    user_id = data.get('real_user_id')
     # 设置随机种子
-    random.seed(str(group_id) + str(user_id) + str(getNowTimeStamp()))
+    random.seed(str(user_id) + str(getNowTimeStamp()))
     r = random.randint(1,100)
     with open('./yunshi.json','r',encoding='utf-8') as f:
         yunshi = json.load(f)
@@ -526,7 +602,7 @@ def TodayYunshi(data):
     good = []
     bad = []
     for i in range(2):
-        t = random.randint(0,max_good-1)
+        t = random.randint(0,max_good-2)
         good.append(yunshi['good'][t])
         yunshi['good'].pop(t)
         max_bad -= 1
@@ -540,15 +616,15 @@ def TodayYunshi(data):
     # good = [random.choice(yunshi['good']),random.choice(yunshi['good'])]
     # bad = [random.choice(yunshi['bad']),random.choice(yunshi['bad'])]
     if r <= 10:
-        return '\n§ 大凶 §\n' + '★☆☆☆☆\n' + f"宜:\n  诸事不宜\n忌:\n  {bad[0]}\n  {bad[1]}"
+        return '[CQ:image,file=https://t.alcy.cc/mp]\n§ 大凶 §\n' + '★☆☆☆☆\n' + f"宜:\n  诸事不宜\n忌:\n  {bad[0]}\n  {bad[1]}"
     elif r > 10 and r <= 30:
-        return '\n§ 小凶 §\n' + '★★☆☆☆\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  {bad[0]}\n  {bad[1]}"
+        return '[CQ:image,file=https://t.alcy.cc/mp]\n§ 小凶 §\n' + '★★☆☆☆\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  {bad[0]}\n  {bad[1]}"
     elif r > 30 and r <= 60:
-        return '\n§ 中平 §\n' + '★★★☆☆\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  {bad[0]}\n  {bad[1]}"
+        return '[CQ:image,file=https://t.alcy.cc/mp]\n§ 中平 §\n' + '★★★☆☆\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  {bad[0]}\n  {bad[1]}"
     elif r > 60 and r <= 80:
-        return '\n§ 小吉 §\n' + '★★★★☆\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  {bad[0]}\n  {bad[1]}"
+        return '[CQ:image,file=https://t.alcy.cc/mp]\n§ 小吉 §\n' + '★★★★☆\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  {bad[0]}\n  {bad[1]}"
     elif r > 80 and r <= 100:
-        return '\n§ 大吉 §\n' + '★★★★★\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  诸事皆宜"
+        return '[CQ:image,file=https://t.alcy.cc/mp]\n§ 大吉 §\n' + '★★★★★\n' + f"宜:\n  {good[0]}\n  {good[1]}\n忌:\n  诸事皆宜"
 
 def NazhaPiaofang():
     try:
@@ -560,6 +636,108 @@ def NazhaPiaofang():
     except Exception as e:
         return str(e.args)
 
+def TimestampToTime(timestamp):
+    #import datetime
+    #timestamp = 1557732923
+    time_struct = datetime.fromtimestamp(timestamp)
+    return time_struct.strftime('%Y-%m-%d')
+
+def GetHistoryToday():
+    try:
+        data = requests.get('https://v2.xxapi.cn/api/history').json()
+        try:
+            if data['code'] != 200:
+                return '获取失败'
+            ret = ""
+            for i in data['data']:
+                ret += i
+            return ret
+        except:
+            return '获取失败'
+    except Exception as e:
+        return str(e.args)
+
+# 40code API
+
+def GetWorkInfo(id):
+    try:
+        data = requests.get(f'https://api.abc.520gxx.com/work/info?id={id}&token=').json()
+        if data['code'] != 1:
+            return '获取失败'
+        data = data.get('data')
+        if data['delete'] == 1:
+            return '本作品已删除'
+        if data['opensource'] == 1:
+            opensource = '开源'
+        else:
+            opensource = '非开源'
+        if data['publish'] == 1:
+            publish = '已发布'
+        else:
+            publish = '未发布'
+        return f"\n{data['name']}\nID:{data['id']}\n{publish} {opensource}\n作者:{data['nickname']}({data['author']})\n查看:{data['look']} 点赞:{data['like']} 收藏:{data['num_collections']}"
+    except Exception as e:
+        return f"错误：{e}"
+
+def Get40codeCoinList():
+    try:
+        data = requests.get('https://api.abc.520gxx.com/user/clist?token=').json()
+        if data.get('code') != 1:
+            return '获取失败'
+        ret = ""
+        data = data.get('data')
+        for i in data:
+            ret += f"\n{i['nickname']}({i['id']}) 金币数：{i['coins']}"
+        return ret
+    except Exception as e:
+        return f"错误：{e}"
+
+def Get40codeUserInfo(id):
+    try:
+        data = requests.get(f'https://api.abc.520gxx.com/user/info?id={str(id)}&token=').json()
+        if data['code'] != 1:
+            return '获取失败'
+        data = data.get('data')[0]
+        #ret = type(data)
+        ret = f"\n{data['nickname']}  ID: {data['id']}\n金币数：{data['coins']}\n粉丝数: {data['fan']} 关注数: {data['follow']}\n注册时间: {TimestampToTime(data['signtime'])}\n最后活跃时间: {TimestampToTime(data['last_active'])}"
+        return ret
+    except Exception as e:
+        return f"错误：{e}"
+
+def Get40codeNewestUser():
+    try:
+        data = requests.post('https://api.abc.520gxx.com/search/?token=',json={"name":"","author":"","type":1,"s":1,"sid":"","fl":0,"fan":0,"follow":0,"page":"1","folder":0}).json()
+        if data['code'] != 1:
+            return '获取失败'
+        data = data.get('data').get('user')
+        return data[0]['id']
+    except Exception as e:
+        return f"错误：{e}"
+
+def build_markdown_segment_text(content: str, keyboard_template: dict) -> dict:
+    """
+    构建文本形式的 Markdown Segment (Base64 编码)
+    
+    :param content: 消息文本内容
+    :param keyboard_template: 已审核的按钮模板
+    :return: OneBot 兼容的 MessageSegment
+    """
+    # 构建 Gensokyo Markdown 结构
+    markdown_data = {
+        "markdown": content,
+        "keyboard": keyboard_template
+    }
+    
+    # 转换为 JSON 并 Base64 编码
+    json_str = json.dumps(markdown_data, ensure_ascii=False)
+    base64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
+    
+    return {
+        "type": "markdown",
+        "data": {
+            "data": f"base64://{base64_str}"
+        }
+    }        
 
 def GetMemAll():
     mem = psutil.virtual_memory()
@@ -591,6 +769,11 @@ def root():
             c.run('whitelist add ' + msg)
             c.run('whitelist save')
             return 'Successfully',200
+    
+    elif msg == '40code':
+        SendGroupMsg(data,f"检测结果: 40code正常运行")
+        return 'Successfully',200
+
     else:
         if msg == '添加内测':
             with open('./whitegroup.json','r') as f:
@@ -606,21 +789,90 @@ def root():
             print(whitegourp)
             SendGroupMsg(data,"命令不正确，目前支持/mc、/审核和/时间指令")
             return 'Successfully',200
-        
+    
+    if msg == '随机图':
+        SendGroupMsg(data,"正在获取随机图")
+        SendGroupImg(data,"https://t.alcy.cc/ycy")
+        return 'Successfully',200
+
+    if msg.startswith("随机图 "):
+        msg = msg.replace("随机图 ","")
+        SendGroupMsg(data,"正在获取随机图(没有发出来就是被和谐了)")
+        if msg == '原神':
+            SendGroupImg(data,"https://t.alcy.cc/ys")
+        elif msg == 'AI':
+            SendGroupImg(data,"https://t.alcy.cc/ai")
+        # https://t.alcy.cc/mp
+        elif msg == '竖版':
+            SendGroupImg(data,"https://t.alcy.cc/mp")
+        elif msg == '萌版':
+            SendGroupImg(data,"https://t.alcy.cc/moe")
+        elif msg == "白色背景":
+            SendGroupImg(data,"https://t.alcy.cc/bd")
+        elif msg == "原神竖版":
+            SendGroupImg(data,"https://t.alcy.cc/ysmp")
+        elif msg == "七瀨胡桃":
+            SendGroupImg(data,"https://t.alcy.cc/lai")
+        elif msg == "头像":
+            SendGroupImg(data,"https://t.alcy.cc/tx")
+        elif msg == "乐青源":
+            SendGroupImg(data,"https://api.imlazy.ink/img")
+        elif msg == "樱花":
+            SendGroupImg(data,"https://www.dmoe.cc/random.php")
+        elif msg == "东方":
+            SendGroupImg(data,"https://img.paulzzh.com/touhou/random")
+        elif msg == "R18":
+            time.sleep(10)
+            SendGroupMsg(data,'拒绝黄色，从你做起😅')
+        elif msg == "风景":
+            SendGroupImg(data,"https://picsum.photos/580/300")
+        elif msg == "三次元":
+            SendGroupImg(data,"https://v2.xxapi.cn/api/meinvpic?return=302")
+        elif msg == "原神2":
+            SendGroupImg(data,"https://api.suyanw.cn/api/ys")
+        elif msg == "甘城猫猫":
+            SendGroupImg(data,"https://api.suyanw.cn/api/mao")
+        elif msg == "碧蓝航线":
+            SendGroupImg(data,"https://image.anosu.top/pixiv/direct?r18=0&keyword=azurlane")
+        else:
+            SendGroupImg(data,'https://i.pixiv.re/img-original/img/2022/10/28/00/00/11/102280854_p0.png')
+            SendGroupMsg(data,"开始从pixiv中获取图片")
+            ret = requests.get(f"https://image.anosu.top/pixiv/json?keyword={msg}").json()[0]
+            img = ret['url']
+            SendGroupImg(data,img)
+        return 'Successfully',200
     if msg.startswith("绑定QQ号 "):
         msg = msg.replace("绑定QQ号 ","")
         return 'Successfully',200
     
+    if msg == '切换模型':
+        SendGroupMsg(data,'可是你并没有指定模型名称....')
+        return 'Successfully',200
+
     if msg == '测试':
-        
+        SendGroupMsg(data, f'40code[CQ:image,file=https://t.alcy.cc/mp]')
         return 'Successfully',200
     
+    if msg == "40code 金币榜" or msg == "40code coin":
+        SendGroupMsg(data,Get40codeCoinList())
+        return 'Successfully',200
+
+    if msg.startswith('40code user '):
+        msg = msg.replace('40code user ', '')
+        SendGroupMsg(data,Get40codeUserInfo(msg))
+        return 'Successfully',200
+
+    if msg.startswith('40code work '):
+        msg = msg.replace('40code work ', '')
+        SendGroupMsg(data,GetWorkInfo(msg))
+        return 'Successfully',200
+
     if msg == '一言':
         SendGroupMsg(data,f"{YiYan()}")
         return 'Successfully',200
     
     if msg == '今日运势':
-        SendGroupMsg(data,f"{TodayYunshi(data)}")
+        SendGroupMsg(data, TodayYunshi(data=data))
         return 'Successfully',200
     
     if msg.startswith('域名查询 '):
@@ -632,7 +884,14 @@ def root():
         return 'Successfully',200
     
     if msg == '获取ID':
-        SendGroupMsg(data,f"群ID: {data['group_id']}")
+        SendGroupMsg(data,f"用户ID: {data['real_user_id']}")
+        return 'Successfully',200
+    
+    if msg == 'today':
+        SendGroupMsg(data,f"正在查询历史上的今天")
+        print('[Debug]收到:today')
+        SendGroupMsg(data,GetHistoryToday())
+        print('[Debug]发送:today')
         return 'Successfully',200
     
     if msg.startswith("status "):
@@ -658,6 +917,13 @@ def root():
             SendGroupMsg(data,"请输入正确的参数")
             return 'Successfully',200
         
+    elif msg == 'check gitlab':
+        t = requests.get('https://git.dev.scerpark.cn/-/liveness?token=M7XVNuCsyxM9WifxQ_ff').json().get('status','error')
+        if t == 'ok':
+            SendGroupMsg(data,"Gitlab状态正常")
+        else:
+            SendGroupMsg(data,"Gitlab状态异常")
+        return 'Successfully',200
     elif msg.startswith("mc "):
         SendGroupMsg(data,"该指令已禁用")
         return 'Successfully',200
@@ -670,15 +936,10 @@ def root():
         SendGroupMsg(data,msg.replace('echo ','',1),True)
         return 'Successfully',200
     
-    elif msg.startswith('绑定QQ '):
-        msg = msg.replace('绑定QQ ','')
-        SendGroupMsg(data,f"正在执行绑定QQ操作，请绑定自己的QQ号，恶意绑定会被封禁")
-        BindQQ(data,msg)
-        SendGroupMsg(data,f"绑定成功")
-        return 'Successfully',200
-    
     elif msg.startswith("切换模型 "):
         msg = msg.replace("切换模型 ","")
+        if msg in deepseek_model:
+            SendGroupMsg(data,f"是抖M吗你")
         if msg not in model_list:
             SendGroupMsg(data,f"模型不存在")
             return 'Successfully',200
@@ -700,7 +961,13 @@ def root():
             ret = BilibiliSearch(msg)
             SendGroupMsg(data,ret)
             return 'Successfully',200
-        
+    
+    elif msg.startswith('weather '):
+        msg = msg.replace('weather ','')
+        # SendGroupMsg(data,f"正在查询...")
+        SendGroupMsg(data,GetWeather(msg))
+        return 'Successfully',200
+
     elif msg == '当前模型':
         SendGroupMsg(data,f"当前模型为{GetModel(data)}")
         return 'Successfully',200
@@ -731,6 +998,19 @@ def root():
         SendGroupMsg(data,retu)
         return {}
     
+    elif msg == '40code 用户数':
+        SendGroupMsg(data,f"{Get40codeNewestUser()}")
+        return 'Successfully',200
+
+    elif msg == 'zerocat 用户数':
+        SendGroupMsg(data,f"{GetZeroCatUser()}")
+        return 'Successfully',200
+
+    elif msg == '小盒子 用户数':
+        SendGroupMsg(data,f"{GetBoxUser()}")
+        return 'Successfully',200
+
+
     elif msg.startswith('bing search '):
         # SendGroupMsg(data,f"正在搜索...")
         msg = msg.replace('bing search ','')
@@ -758,6 +1038,10 @@ def root():
         SendGroupMsg(data,'商店为空')
         return {}
     
+    elif msg == '关于':
+        SendGroupMsg(data,TestMarkdown())
+        return {}
+
     # 判断是否为流式对话
     if data['group_id'] in StreamInfo and data['user_id'] in StreamInfo[data['group_id']]:
         SendGroupMsg(data,'正在思考(当前处于流式对话模型)')
@@ -775,18 +1059,8 @@ import json
 
 def TestMarkdown():
     t = {
-        "markdown": {
-            "custom_template_id": "102646446_1740898338",
-            "params": [
-                {
-                    "key": "text_start",
-                    "values": ["标题"]
-                },
-                {
-                    "key":"img_url",
-                    "values":["http://p.qlogo.cn/gh/748440630/748440630/0/"]
-                }
-            ]
+        "keyboard": {
+            "id":"102646446_1746274607"
         }
     }
     # 将字典转换为 JSON 字符串
@@ -795,9 +1069,14 @@ def TestMarkdown():
     encoded_t = encode_to_base64(t_json)
     # 构建最终的回复字符串
     reply = f"[CQ:markdown,data=base64://{encoded_t}]"
-    PushMsg(487886163, reply)
+    return reply
 
 if __name__ == "__main__":
+    if not os.path.exists('./temp'):
+        os.makedirs('./temp')
+    else:
+        shutil.rmtree('./temp')
+        os.makedirs('./temp')
     with open('./whitelist.json', 'r') as f:
         whitelist = json.load(f)
     # TestMarkdown()
