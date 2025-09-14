@@ -26,19 +26,11 @@ from zhipuai import ZhipuAI # type: ignore
 import qianfan # type: ignore
 import base64
 
-from apitoken import *
+from apitoken import * # type: ignore
 
 app = Flask(__name__)
 
 help_text = """
-/时间 获取当前时间
-/审核 [用户名] 将用户名添加入白名单
-/40code 获取40code状态
-/help 显示本列表
-"""
-
-
-"""
 /help 获取帮助
 /时间 获取当前时间
 bilibili search [名称] 搜索视频名称
@@ -46,6 +38,9 @@ bilibili search [名称] 搜索视频名称
 签到 签到
 商店 查看商店
 模型列表 查看模型列表
+ 注: 可以携带以下参数:
+  通义千问
+  详细
 切换模型 [模型名称] 切换为指定模型
 哪咤票房 查看哪咤之魔童闹海的实时票房
 weather [城市名] 获取天气信息"""
@@ -67,7 +62,7 @@ without_ban = []
 
 # AI部分
 
-model_list = ['spark-lite','讯飞星火','讯飞星火-lite','hunyuan','腾讯混元','hunyuan-lite','智谱清言','glm','chatglm','文心一言','文心一言-speed','ERNIE Speed','ERNIE-Speed-128K','ERNIE-Speed','文心一言-lite','ERNIE Lite','ERNIE-Lite-8K','ERNIE-Lite','文心一言-tiny','ERNIE Tiny','ERNIE-Tiny','ERNIE-Tiny-8K','deepseek','DeepSeek','DeepSeek-R1','DeepSeek-8B','深度思考','deepseek-r1','qwen','Qwen','通义千问','Qwen2.5','Tongyi','Gemini']
+model_list = ['讯飞星火','腾讯混元','智谱清言','glm','文心一言','DeepSeek','通义千问','ChatGPT','Grok','Grok4','Kimi','Qwen3']
 
 '''讯飞星火'''
 xing_model = ['spark-lite','讯飞星火-lite','讯飞星火']
@@ -91,9 +86,23 @@ baidu_model_tiny = ['文心一言-tiny','ERNIE Tiny','ERNIE-Tiny','ERNIE-Tiny-8K
 
 '''硅基流动'''
 
-
 deepseek_model = ['deepseek','DeepSeek','DeepSeek-R1','DeepSeek-8B','深度思考','deepseek-r1']
 qwen_model = ['qwen','Qwen','通义千问','Qwen2.5','Tongyi']
+
+'''Breath AI'''
+BreathAIURL = 'https://api.breathai.top/v1'
+chatgpt_model = ['ChatGPT','ChatGPT-5','gpt','chatgpt']
+gpt_model_detail = ['gpt-5','gpt-5-chat','gpt-5-mini','gpt-5-nano','gpt-oss-120b','gpt-oss-120b-high','gpt-oss-120b-low','gpt-oss-20b','gpt-oss-20b-high','gpt-oss-20b-low','chatgpt-oss','o3','o3-mini','o4-mini']
+grok_model = ['Grok','Grok3','grok','grok3']
+grok_4_model = ['Grok4','grok4']
+qwen_3_model = ['qwen2.5-vl-72b-instruct','qwen3-14b','qwen3-32b-ultrafast','qwen3-235b-a22b','qwen3-235b-a22b-instruct-2507','qwen3-235b-a22b-thinking-2507','qwen3-30b-a3b','qwen3-30b-a3b-instruct-2507','qwen3-30b-a3b-thinking-2507','qwen3-32b','qwen3-8b','qwen3-coder-30b-a3b-instruct','qwen3-coder-30b-a3b-instruct','qwen3-coder-480b-a33b-instruct','qwenlong-l1-32b','qwq']
+kimi_model = ['Kimi','kimi']
+deepseek_all_model = ['deepseek-r1','deepseek-r1-0528-qwen3-8b','deepseek-v2.5','deepseek-v3','deepseek-v3.1']
+meta_all_model = ['llama-3.1-8b-instant','llama-3.3-70b-versatile','llama-4-maverick','llama-4-scout']
+grok_all_model = ['grok-3','grok-3-mini','grok-3-mini-devx','grok-4']
+glm_all_model = ['glm-4.5','glm-4.5-air','glm-4.5v']
+
+breath_all_model = gpt_model_detail + qwen_3_model + deepseek_all_model + meta_all_model + ['kimi-k2'] + glm_all_model + ['breath']
 
 model_group = {}
 
@@ -103,7 +112,7 @@ def GetUid(data):
     user_id = str(data['real_user_id'])
     uid = f"{user_id}"
     if uid not in user:
-        user[uid] = {'lashSign':'2000-1-1','SignDays':'0','Coin':'0','model':'glm','streamInfo':None,'qid':'0'}
+        user[uid] = {'lashSign':'2000-1-1','SignDays':'0','Coin':'0','model':'qwen3-32b-ultrafast','streamInfo':None,'qid':'0'}
         with open('./user.json','w',encoding='utf-8') as f:
             json.dump(user,f,ensure_ascii=False,indent=4)
         return uid
@@ -144,6 +153,7 @@ def encode_to_base64(input_string):
 # 调用AI并获取返回
 def NoStreamChat(model, self):
     if model in xing_model:
+        print("[Debug]Call Xing: " + model)
         spark = ChatSparkLLM(
             spark_api_url=SPARKAI_URL,
             spark_app_id=SPARKAI_APP_ID,  # 直接传递参数
@@ -165,6 +175,7 @@ def NoStreamChat(model, self):
         print("Generated text:", a.generations[0][0].text)  # 添加调试信息
         return str(a.generations[0][0].text)
     elif model in tencent_model:
+        print("[Debug]Call Tencent: " + model)
         client = OpenAI(
             api_key=Tencent_AppKey,  # 混元 APIKey
             base_url="https://api.hunyuan.cloud.tencent.com/v1",  # 混元 endpoint
@@ -182,6 +193,7 @@ def NoStreamChat(model, self):
         print("Generated text:", completion.choices[0].message.content)  # 添加调试信息
         return str(completion.choices[0].message.content)
     elif model in zhipu_model:
+        print("[Debug]Call Zhipu: " + model)
         client = ZhipuAI(api_key=zhipu_key)
         try:
             response = client.chat.completions.create(
@@ -200,6 +212,7 @@ def NoStreamChat(model, self):
             print("Error:", e)
             return "Error: " + str(e)
     elif model in baidu_model_lite:
+        print("[Debug]Call Baidu Lite: " + model)
         chat_comp = qianfan.ChatCompletion()
         # 指定特定模型
         resp = chat_comp.do(model="ERNIE-Lite-8K", messages=[{
@@ -208,13 +221,24 @@ def NoStreamChat(model, self):
         }])
         print("Generated text:",resp["body"])
         return resp["body"]['result']
-    elif model == "Gemini":
+    elif model in baidu_model_speed:
+        print("[Debug]Call Baidu Speed: " + model)
+        chat_comp = qianfan.ChatCompletion()
+        resp = chat_comp.do(model="ERNIE-Speed-128K", messages=[{
+            "role": "user",
+            "content": self
+        }])
+        print("Generated text:",resp["body"])
+        return resp["body"]['result']
+    
+    elif model in chatgpt_model:
+        print("[Debug]Call ChatGPT: " + model)
         client = OpenAI(
-            api_key='sk-AmethystFree',  
-            base_url="https://free.amethyst.ltd/v1",
+            api_key=breath_ai_key,   # type: ignore
+            base_url=BreathAIURL,
         )
         completion = client.chat.completions.create(
-            model='gemini-2.5-pro',
+            model='gpt-5',
             messages=[
                 {
                     "role": "user",
@@ -223,17 +247,117 @@ def NoStreamChat(model, self):
             ],
             extra_body={},
         )
-        print("Generated text:", completion.choices[0].message.content)
+        # print("Generated text:", completion.choices[0].message.content)
+        print(str(completion.choices[0].message.content))
         return str(completion.choices[0].message.content)
-    elif model in baidu_model_speed:
-        chat_comp = qianfan.ChatCompletion()
-        resp = chat_comp.do(model="ERNIE-Speed-128K", messages=[{
-            "role": "user",
-            "content": self
-        }])
-        print("Generated text:",resp["body"])
-        return resp["body"]['result']
+    
+    elif model == "grok-3-mini-devx":
+        print("[Debug]Call Grok Mini Devx: " + model)
+
+        client = OpenAI(
+            api_key=breath_ai_key,   # type: ignore
+            base_url=BreathAIURL,
+        )
+        completion = client.chat.completions.create(
+            model='grok-3-mini-devx',
+            messages=[
+                {
+                    "role": "user",
+                    "content": self,
+                },
+            ],
+            extra_body={},
+        )
+        # print("Generated text:", completion.choices[0].message.content)
+        print(str(completion.choices[0].message.content))
+        return str(completion.choices[0].message.content)
+    
+    elif model in breath_all_model:
+
+        print("[Debug]Call Breath AI: " + model)
+        client = OpenAI(
+            api_key=breath_ai_key,   # type: ignore
+            base_url=BreathAIURL,
+        )
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": self,
+                },
+            ],
+            extra_body={},
+        )
+        # print("Generated text:", completion.choices[0].message.content)
+        print("[Debug]re" + str(completion.choices[0].message.content))
+        return str(completion.choices[0].message.content)
+    
+    elif model in grok_model:
+        print("[Debug]Call Grok: " + model)
+
+        client = OpenAI(
+            api_key=breath_ai_key,   # type: ignore
+            base_url=BreathAIURL,
+        )
+        completion = client.chat.completions.create(
+            model='grok-3',
+            messages=[
+                {
+                    "role": "user",
+                    "content": self,
+                },
+            ],
+            extra_body={},
+        )
+        # print("Generated text:", completion.choices[0].message.content)
+        print(str(completion.choices[0].message.content))
+        return str(completion.choices[0].message.content)
+    
+    elif model in grok_4_model:
+        print("[Debug]Call Grok 4: " + model)
+
+        client = OpenAI(
+            api_key=breath_ai_key,   # type: ignore
+            base_url=BreathAIURL,
+        )
+        completion = client.chat.completions.create(
+            model='grok-4',
+            messages=[
+                {
+                    "role": "user",
+                    "content": self,
+                },
+            ],
+            extra_body={},
+        )
+        # print("Generated text:", completion.choices[0].message.content)
+        print(str(completion))
+        return str(completion.choices[0].message.content)
+    
+    elif model in kimi_model:
+        print("[Debug]Call Kimi: " + model)
+
+        client = OpenAI(
+            api_key=breath_ai_key,   # type: ignore
+            base_url=BreathAIURL,
+        )
+        completion = client.chat.completions.create(
+            model='kimi-k2',
+            messages=[
+                {
+                    "role": "user",
+                    "content": self,
+                },
+            ],
+            extra_body={},
+        )
+        # print("Generated text:", completion.choices[0].message.content)
+        print(str(completion))
+        return str(completion.choices[0].message.content)
+    
     elif model in baidu_model_tiny:
+        print("[Debug]Call Baidu Tiny: " + model)
         chat_comp = qianfan.ChatCompletion()
         resp = chat_comp.do(model="ERNIE-Tiny-8K", messages=[{
             "role": "user",
@@ -258,24 +382,8 @@ def NoStreamChat(model, self):
         )
         print("Generated text:", completion.choices[0].message.content)
         return str(completion.choices[0].message.content)
-    elif model in deepseek_model:
-        client = OpenAI(
-            api_key=silicon_key,  
-            base_url="https://api.siliconflow.cn/v1",
-        )
-        completion = client.chat.completions.create(
-            model='deepseek-ai/DeepSeek-R1-Distill-Llama-8B',
-            messages=[
-                {
-                    "role": "user",
-                    "content": self,
-                },
-            ],
-            extra_body={},
-        )
-        print("Generated text:", completion.choices[0].message.content)
-        return str(completion.choices[0].message.content)
     elif model in qwen_model:
+        print("[Debug]Call Qwen: " + model)
         client = OpenAI(
             api_key=silicon_key,  
             base_url="https://api.siliconflow.cn/v1",
@@ -453,8 +561,11 @@ def SearchWithBing(keyword):
 def BanKeyWord(msg):
     import re
     msg = re.sub(r'(\*\*|__)|(\*|_)|\~\~|\[([^\]]+)\]\(([^)]+)\)|!\[([^\]]*)\]\(([^)]*)\)|`([^`]+)`|```[^`]*```|^#{1,6}\s.*$|^>.*$|^[\-*]\s+.*$', '', msg) # 过滤Markdown语法
+    msg = msg.replace("#",'')
+    msg = msg.replace('*','')
+    msg = msg.replace('- ','')
     msg = re.sub(r'<.*?>', '', msg) # 过滤HTML
-    msg = re.sub(r'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)', '', msg) # 过滤URL
+    # msg = re.sub(r'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)', '', msg) # 过滤URL
     return msg
 
 # 高德API
@@ -523,9 +634,11 @@ def SendGroupImg(data,img):
 
 
 def SendGroupMsg(data,msg,double=False):
+    print("[Info]发送消息: " + str(msg))
     if data['group_id'] not in without_ban:
         msg = BanKeyWord(msg)
     try:
+        
         if double:
             requests.get(f"{api_ip}/send_group_msg?group_id={data['group_id']}&msg_id={data['message_id']}&message={msg}&auto_escape=false")
         return requests.get(f"{api_ip}/send_group_msg?group_id={data['group_id']}&msg_id={data['message_id']}&message={msg}&auto_escape=false").text
@@ -752,7 +865,7 @@ def root():
             SendPrivateMsg(data,f"当前时间是{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             return {}
         SendPrivateMsg(data,"命令不正确，目前私聊只支持/时间指令")
-    print(data)
+    # print(data)
     msg = str(data['raw_message'])
     if msg == 'help':
         SendGroupMsg(data,help_text)
@@ -938,9 +1051,9 @@ def root():
     
     elif msg.startswith("切换模型 "):
         msg = msg.replace("切换模型 ","")
-        if msg in deepseek_model:
-            SendGroupMsg(data,f"是抖M吗你")
-        if msg not in model_list:
+        # if msg in deepseek_model:
+        #     SendGroupMsg(data,f"是抖M吗你")
+        if msg not in model_list and msg not in breath_all_model and msg != 'grok-3-mini-devx':
             SendGroupMsg(data,f"模型不存在")
             return 'Successfully',200
         uid = GetUid(data)
@@ -991,10 +1104,38 @@ def root():
     
     elif msg == '模型列表':
         SendGroupMsg(data,f"模型列表:")
-        retu = ''
+        retu = '\n'
         for i in model_list:
             retu += f"{i}\n"
         retu += f"共{len(model_list)}个模型可用"
+        retu += '\n非常感谢灵息AI提供的大量模型'
+        SendGroupMsg(data,retu)
+        return {}
+    
+    elif msg == '模型列表 通义千问':
+        # SendGroupMsg(data,f"模型列表:")
+        retu = '\n'
+        for i in qwen_3_model:
+            retu += f"{i}\n"
+        retu += f"共{len(qwen_3_model)}个模型可用"
+        SendGroupMsg(data,retu)
+        return {}
+    
+    elif msg == '模型列表 详细' or msg == "模型列表 详细 1":
+        # SendGroupMsg(data,f"模型列表:")
+        retu = '\n§ 以下模型均由灵息AI提供 §\n'
+        for i in breath_all_model[:20]:
+            retu += f"{i}\n"
+        retu += f"列表过长, 请输入 模型列表 详细 2 查看更多"
+        SendGroupMsg(data,retu)
+        return {}
+    
+    elif msg == '模型列表 详细 2':
+        # SendGroupMsg(data,f"模型列表:")
+        retu = '\n§ 以下模型均由灵息AI提供 §\n'
+        for i in breath_all_model[20:]:
+            retu += f"{i}\n"
+        retu += f"共{len(breath_all_model[20:])}个模型可用"
         SendGroupMsg(data,retu)
         return {}
     
@@ -1052,6 +1193,7 @@ def root():
         return {}
     
     SendGroupMsg(data,f"正在思考...(如果没有内容发出，就是被和谐了)")
+    print("[Debug]Call Model: " + GetModel(data))
     SendGroupMsg(data,NoStreamChat(GetModel(data),msg))
     return {}
 
